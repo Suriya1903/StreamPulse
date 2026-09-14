@@ -1,3 +1,5 @@
+import os
+
 from pyspark.sql import SparkSession
 from pyspark.sql.types import (
     StructType,
@@ -14,6 +16,26 @@ from pyspark.sql.functions import (
 )
 
 from postgres_writer import save_batch
+
+
+# --------------------------------------------------
+# Environment configuration
+# --------------------------------------------------
+
+KAFKA_HOST = os.getenv(
+    "KAFKA_HOST",
+    "localhost:9092"
+)
+
+POSTGRES_HOST = os.getenv(
+    "DB_HOST",
+    "127.0.0.1"
+)
+
+POSTGRES_PORT = os.getenv(
+    "DB_PORT",
+    "5433"
+)
 
 
 # --------------------------------------------------
@@ -101,7 +123,7 @@ kafka_df = (
     .format("kafka")
     .option(
         "kafka.bootstrap.servers",
-        "localhost:9092"
+        KAFKA_HOST
     )
     .option(
         "subscribe",
@@ -129,7 +151,6 @@ json_df = kafka_df.select(
         transaction_schema
     ).alias("data")
 )
-
 
 transactions = json_df.select("data.*")
 
@@ -253,8 +274,6 @@ query = (
 
     .foreachBatch(save_batch)
 
-    # NEW checkpoint name
-    # This avoids the old corrupted checkpoint.
     .option(
         "checkpointLocation",
         "data/checkpoints/fraud_detection_v2"
@@ -267,9 +286,9 @@ query = (
 print("\n======================================")
 print("StreamPulse Spark Streaming Started")
 print("======================================")
-print("Kafka      : localhost:9092")
+print(f"Kafka      : {KAFKA_HOST}")
+print(f"PostgreSQL : {POSTGRES_HOST}:{POSTGRES_PORT}")
 print("Topic      : transactions")
-print("PostgreSQL : localhost:5433")
 print("Checkpoint : fraud_detection_v2")
 print("\nWaiting for transactions...\n")
 

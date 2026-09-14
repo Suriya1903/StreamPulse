@@ -19,14 +19,15 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 MODEL_PATH = PROJECT_ROOT / "models" / "fraud_model.pkl"
 
 
-DB_CONFIG = {
-    "host": "127.0.0.1",
-    "port": 5433,
-    "database": "streampulse",
-    "user": "streampulse",
-    "password": "streampulse_password",
-}
+import os
 
+DB_CONFIG = {
+    "host": os.getenv("DB_HOST", "127.0.0.1"),
+    "port": int(os.getenv("DB_PORT", "5433")),
+    "database": os.getenv("DB_NAME", "streampulse"),
+    "user": os.getenv("DB_USER", "streampulse"),
+    "password": os.getenv("DB_PASSWORD", "streampulse_password"),
+}
 
 # --------------------------------------------------
 # Load ML model

@@ -1,0 +1,14 @@
+FROM apache/spark:4.0.1
+
+USER root
+
+RUN pip install --no-cache-dir \
+    joblib \
+    pandas \
+    numpy \
+    scikit-learn \
+    psycopg2-binary \
+    redis \
+    requests
+
+USER spark

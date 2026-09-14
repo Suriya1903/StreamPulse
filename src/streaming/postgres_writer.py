@@ -1,3 +1,4 @@
+import os
 from pathlib import Path
 from datetime import datetime
 
@@ -11,22 +12,25 @@ from src.database.redis_client import (
 )
 
 
-# ============================================================
-# PostgreSQL
-# ============================================================
+# --------------------------------------------------
+# Database configuration
+# --------------------------------------------------
 
 DB_CONFIG = {
-    "host": "127.0.0.1",
-    "port": 5433,
-    "database": "streampulse",
-    "user": "streampulse",
-    "password": "streampulse_password",
+    "host": os.getenv("DB_HOST", "127.0.0.1"),
+    "port": int(os.getenv("DB_PORT", "5433")),
+    "database": os.getenv("DB_NAME", "streampulse"),
+    "user": os.getenv("DB_USER", "streampulse"),
+    "password": os.getenv(
+        "DB_PASSWORD",
+        "streampulse_password"
+    ),
 }
 
 
-# ============================================================
-# ML MODEL
-# ============================================================
+# --------------------------------------------------
+# Load ML model
+# --------------------------------------------------
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 
@@ -36,24 +40,17 @@ MODEL_PATH = (
     / "fraud_model.pkl"
 )
 
-
-model_bundle = joblib.load(
-    MODEL_PATH
-)
-
+model_bundle = joblib.load(MODEL_PATH)
 
 if isinstance(model_bundle, dict):
-
     model = model_bundle["model"]
-
 else:
-
     model = model_bundle
 
 
-# ============================================================
-# SAVE SPARK BATCH
-# ============================================================
+# --------------------------------------------------
+# Save Spark batch
+# --------------------------------------------------
 
 def save_batch(batch_df, batch_id):
 
@@ -62,24 +59,14 @@ def save_batch(batch_df, batch_id):
     )
 
     if batch_df.isEmpty():
-
-        print(
-            "No transactions in this batch."
-        )
-
+        print("No transactions in this batch.")
         return
-
-
-    # --------------------------------------------------------
-    # Spark → Pandas
-    # --------------------------------------------------------
 
     pdf = batch_df.toPandas()
 
-
-    # --------------------------------------------------------
+    # --------------------------------------------------
     # ML prediction
-    # --------------------------------------------------------
+    # --------------------------------------------------
 
     features = pdf[
         [
@@ -90,60 +77,51 @@ def save_batch(batch_df, batch_id):
         ]
     ]
 
+    predictions = model.predict(features)
 
-    predictions = model.predict(
-        features
+    probabilities = (
+        model.predict_proba(features)[:, 1]
     )
-
-
-    probabilities = model.predict_proba(
-        features
-    )[:, 1]
-
 
     pdf["fraud_prediction"] = (
         predictions.astype(int)
     )
 
+    pdf["fraud_probability"] = probabilities
 
-    pdf["fraud_probability"] = (
-        probabilities
-    )
-
-
-    # --------------------------------------------------------
+    # --------------------------------------------------
     # Risk level
-    # --------------------------------------------------------
+    # --------------------------------------------------
 
     def calculate_risk(probability):
 
         if probability >= 0.80:
-
             return "HIGH"
 
         elif probability >= 0.50:
-
             return "MEDIUM"
 
         return "LOW"
-
 
     pdf["risk_level"] = (
         pdf["fraud_probability"]
         .apply(calculate_risk)
     )
 
+    # --------------------------------------------------
+    # PostgreSQL connection
+    # --------------------------------------------------
 
-    # ========================================================
-    # PostgreSQL
-    # ========================================================
+    print(
+        f"Connecting to PostgreSQL: "
+        f"{DB_CONFIG['host']}:{DB_CONFIG['port']}"
+    )
 
     connection = psycopg2.connect(
         **DB_CONFIG
     )
 
     cursor = connection.cursor()
-
 
     query = """
     INSERT INTO transactions (
@@ -168,15 +146,13 @@ def save_batch(batch_df, batch_id):
     DO NOTHING;
     """
 
-
-    # ========================================================
-    # Process each transaction
-    # ========================================================
+    # --------------------------------------------------
+    # Write transactions
+    # --------------------------------------------------
 
     for _, row in pdf.iterrows():
 
         timestamp = row["timestamp"]
-
 
         try:
 
@@ -190,7 +166,6 @@ def save_batch(batch_df, batch_id):
         except ValueError:
 
             timestamp = None
-
 
         transaction = {
 
@@ -222,9 +197,7 @@ def save_batch(batch_df, batch_id):
                 int(row["fraud_prediction"]),
 
             "fraud_probability":
-                float(
-                    row["fraud_probability"]
-                ),
+                float(row["fraud_probability"]),
 
             "risk_score":
                 int(row["risk_score"]),
@@ -232,11 +205,6 @@ def save_batch(batch_df, batch_id):
             "risk_level":
                 row["risk_level"],
         }
-
-
-        # ----------------------------------------------------
-        # PostgreSQL
-        # ----------------------------------------------------
 
         cursor.execute(
             query,
@@ -256,10 +224,9 @@ def save_batch(batch_df, batch_id):
             ),
         )
 
-
-        # ----------------------------------------------------
-        # Redis
-        # ----------------------------------------------------
+        # --------------------------------------------------
+        # Redis cache
+        # --------------------------------------------------
 
         try:
 
@@ -277,33 +244,24 @@ def save_batch(batch_df, batch_id):
                 f"Redis warning: {redis_error}"
             )
 
-
-    # ========================================================
-    # Commit PostgreSQL
-    # ========================================================
-
     connection.commit()
 
     cursor.close()
-
     connection.close()
 
-
-    # ========================================================
-    # Output
-    # ========================================================
+    # --------------------------------------------------
+    # Batch summary
+    # --------------------------------------------------
 
     print(
         f"Saved {len(pdf)} transactions "
         f"to PostgreSQL."
     )
 
-
     print(
         f"Cached {len(pdf)} transactions "
         f"in Redis."
     )
-
 
     for _, row in pdf.iterrows():
 
