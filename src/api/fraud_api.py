@@ -1,14 +1,21 @@
+import os
 import pandas as pd
 from pathlib import Path
 
 import joblib
 import psycopg2
+
 from fastapi import FastAPI
 from pydantic import BaseModel
+
+from prometheus_fastapi_instrumentator import Instrumentator
+from prometheus_client import Gauge
+
 from src.database.redis_client import (
     get_recent_transactions,
     check_redis_connection,
 )
+
 
 # --------------------------------------------------
 # Configuration
@@ -19,15 +26,17 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 MODEL_PATH = PROJECT_ROOT / "models" / "fraud_model.pkl"
 
 
-import os
-
 DB_CONFIG = {
     "host": os.getenv("DB_HOST", "127.0.0.1"),
     "port": int(os.getenv("DB_PORT", "5433")),
     "database": os.getenv("DB_NAME", "streampulse"),
     "user": os.getenv("DB_USER", "streampulse"),
-    "password": os.getenv("DB_PASSWORD", "streampulse_password"),
+    "password": os.getenv(
+        "DB_PASSWORD",
+        "streampulse_password"
+    ),
 }
+
 
 # --------------------------------------------------
 # Load ML model
@@ -50,6 +59,58 @@ app = FastAPI(
     description="Real-time fraud detection and analytics API",
     version="1.0.0",
 )
+
+
+# --------------------------------------------------
+# Prometheus Custom Metrics
+# --------------------------------------------------
+
+# Transaction metrics
+
+total_transactions_metric = Gauge(
+    "streampulse_total_transactions",
+    "Total number of transactions"
+)
+
+fraud_transactions_metric = Gauge(
+    "streampulse_fraud_transactions",
+    "Total number of fraudulent transactions"
+)
+
+normal_transactions_metric = Gauge(
+    "streampulse_normal_transactions",
+    "Total number of normal transactions"
+)
+
+fraud_rate_metric = Gauge(
+    "streampulse_fraud_rate",
+    "Fraud percentage"
+)
+
+
+# Risk metrics
+
+low_risk_transactions_metric = Gauge(
+    "streampulse_low_risk_transactions",
+    "Number of low risk transactions"
+)
+
+medium_risk_transactions_metric = Gauge(
+    "streampulse_medium_risk_transactions",
+    "Number of medium risk transactions"
+)
+
+high_risk_transactions_metric = Gauge(
+    "streampulse_high_risk_transactions",
+    "Number of high risk transactions"
+)
+
+
+# --------------------------------------------------
+# Prometheus HTTP Metrics
+# --------------------------------------------------
+
+Instrumentator().instrument(app).expose(app)
 
 
 # --------------------------------------------------
@@ -91,7 +152,6 @@ def health_check():
 
         redis_status = False
 
-
     return {
         "status": "healthy",
         "service": "fraud-detection-api",
@@ -108,31 +168,34 @@ def health_check():
 def predict_fraud(transaction: Transaction):
 
     features = pd.DataFrame(
-    [[
-        transaction.amount,
-        transaction.unknown_device,
-        transaction.online_payment,
-        transaction.unusual_location,
-    ]],
-    columns=[
-        "amount",
-        "unknown_device",
-        "online_payment",
-        "unusual_location",
-    ],
-)
+        [[
+            transaction.amount,
+            transaction.unknown_device,
+            transaction.online_payment,
+            transaction.unusual_location,
+        ]],
+        columns=[
+            "amount",
+            "unknown_device",
+            "online_payment",
+            "unusual_location",
+        ],
+    )
 
     prediction = model.predict(features)[0]
 
     probability = model.predict_proba(features)[0][1]
 
     if probability >= 0.80:
+
         risk_level = "HIGH"
 
     elif probability >= 0.50:
+
         risk_level = "MEDIUM"
 
     else:
+
         risk_level = "LOW"
 
     return {
@@ -165,12 +228,9 @@ def get_transactions(limit: int = 20):
         if cached_transactions:
 
             return {
-                "count": len(
-                    cached_transactions
-                ),
+                "count": len(cached_transactions),
                 "source": "redis",
-                "transactions":
-                    cached_transactions,
+                "transactions": cached_transactions,
             }
 
     except Exception:
@@ -185,7 +245,6 @@ def get_transactions(limit: int = 20):
     connection = get_db_connection()
 
     cursor = connection.cursor()
-
 
     query = """
     SELECT
@@ -206,23 +265,17 @@ def get_transactions(limit: int = 20):
     LIMIT %s;
     """
 
-
     cursor.execute(
         query,
         (limit,)
     )
 
-
     rows = cursor.fetchall()
 
-
     cursor.close()
-
     connection.close()
 
-
     transactions = []
-
 
     for row in rows:
 
@@ -246,14 +299,12 @@ def get_transactions(limit: int = 20):
 
             "fraud_prediction": row[8],
 
-            "fraud_probability":
-                float(row[9]),
+            "fraud_probability": float(row[9]),
 
             "risk_score": row[10],
 
             "risk_level": row[11],
         })
-
 
     return {
 
@@ -273,6 +324,7 @@ def get_transactions(limit: int = 20):
 def fraud_summary():
 
     connection = get_db_connection()
+
     cursor = connection.cursor()
 
     query = """
@@ -300,27 +352,54 @@ def fraud_summary():
     row = cursor.fetchone()
 
     cursor.close()
+
     connection.close()
 
     total = row[0]
+
     fraud = row[1]
+
     normal = row[2]
+
     avg_probability = row[3]
 
-    fraud_rate = (
+    calculated_fraud_rate = (
         (fraud / total) * 100
         if total > 0
         else 0
     )
 
+
+    # --------------------------------------------------
+    # Update Prometheus Metrics
+    # --------------------------------------------------
+
+    total_transactions_metric.set(total)
+
+    fraud_transactions_metric.set(fraud)
+
+    normal_transactions_metric.set(normal)
+
+    fraud_rate_metric.set(calculated_fraud_rate)
+
+
+    # --------------------------------------------------
+    # API Response
+    # --------------------------------------------------
+
     return {
+
         "total_transactions": total,
+
         "fraudulent_transactions": fraud,
+
         "normal_transactions": normal,
+
         "fraud_rate_percentage": round(
-            fraud_rate,
+            calculated_fraud_rate,
             2
         ),
+
         "average_fraud_probability": round(
             float(avg_probability),
             4
@@ -336,6 +415,7 @@ def fraud_summary():
 def risk_summary():
 
     connection = get_db_connection()
+
     cursor = connection.cursor()
 
     query = """
@@ -352,6 +432,7 @@ def risk_summary():
     rows = cursor.fetchall()
 
     cursor.close()
+
     connection.close()
 
     result = {}
@@ -359,6 +440,33 @@ def risk_summary():
     for row in rows:
 
         result[row[0]] = row[1]
+
+
+    # --------------------------------------------------
+    # Get Risk Counts
+    # --------------------------------------------------
+
+    low_risk = result.get("LOW", 0)
+
+    medium_risk = result.get("MEDIUM", 0)
+
+    high_risk = result.get("HIGH", 0)
+
+
+    # --------------------------------------------------
+    # Update Prometheus Risk Metrics
+    # --------------------------------------------------
+
+    low_risk_transactions_metric.set(low_risk)
+
+    medium_risk_transactions_metric.set(medium_risk)
+
+    high_risk_transactions_metric.set(high_risk)
+
+
+    # --------------------------------------------------
+    # API Response
+    # --------------------------------------------------
 
     return result
 
@@ -371,6 +479,7 @@ def risk_summary():
 def recent_fraud(limit: int = 10):
 
     connection = get_db_connection()
+
     cursor = connection.cursor()
 
     query = """
@@ -389,11 +498,15 @@ def recent_fraud(limit: int = 10):
     LIMIT %s;
     """
 
-    cursor.execute(query, (limit,))
+    cursor.execute(
+        query,
+        (limit,)
+    )
 
     rows = cursor.fetchall()
 
     cursor.close()
+
     connection.close()
 
     fraud_transactions = []
@@ -401,17 +514,27 @@ def recent_fraud(limit: int = 10):
     for row in rows:
 
         fraud_transactions.append({
+
             "transaction_id": row[0],
+
             "customer_id": row[1],
+
             "amount": float(row[2]),
+
             "location": row[3],
+
             "merchant": row[4],
+
             "fraud_probability": float(row[5]),
+
             "risk_level": row[6],
+
             "timestamp": str(row[7]),
         })
 
     return {
+
         "count": len(fraud_transactions),
+
         "transactions": fraud_transactions,
     }

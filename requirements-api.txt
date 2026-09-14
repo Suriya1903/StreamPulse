@@ -7,3 +7,4 @@ joblib
 psycopg2-binary
 redis
 requests
+prometheus-fastapi-instrumentator

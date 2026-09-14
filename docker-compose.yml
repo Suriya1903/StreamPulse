@@ -134,6 +134,23 @@ services:
       - postgres
       - redis
 
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: streampulse-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    depends_on:
+      - api
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: streampulse-grafana
+    ports:
+      - "3000:3000"
+    depends_on:
+      - prometheus
 
 # ===========================================================
 # VOLUMES
