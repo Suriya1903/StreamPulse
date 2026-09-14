@@ -1,9 +1,9 @@
 venv/
 __pycache__/
+.pytest_cache/
 *.pyc
+
+data/checkpoints/
+
 .env
-.ipynb_checkpoints/
-models/*.pkl
-models/*.joblib
-data/raw/*
-data/processed/*
+*.log

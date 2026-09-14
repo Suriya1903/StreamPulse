@@ -29,6 +29,10 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
+      - name: Train ML model
+        run: |
+          python src/fraud_detection/train_model.py
+
       - name: Run tests
         run: |
           pytest -v
