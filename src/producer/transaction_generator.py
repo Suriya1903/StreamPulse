@@ -1,16 +1,6 @@
 import random
 import uuid
-import time
-from datetime import datetime
-
-
-CUSTOMERS = [
-    "C1001",
-    "C1002",
-    "C1003",
-    "C1004",
-    "C1005",
-]
+from datetime import datetime, timezone
 
 
 LOCATIONS = [
@@ -19,8 +9,8 @@ LOCATIONS = [
     "Mumbai",
     "Delhi",
     "Hyderabad",
+    "Pune",
 ]
-
 
 MERCHANTS = [
     "Amazon",
@@ -31,14 +21,12 @@ MERCHANTS = [
     "BookMyShow",
 ]
 
-
 PAYMENT_METHODS = [
     "UPI",
     "Credit Card",
     "Debit Card",
     "Net Banking",
 ]
-
 
 DEVICES = [
     "Mobile",
@@ -48,23 +36,54 @@ DEVICES = [
 
 
 def generate_transaction():
+    """
+    Generate a synthetic transaction for StreamPulse.
+
+    Around 10% of transactions are marked as fraud.
+    Fraudulent transactions are intentionally given
+    suspicious characteristics so the ML model can learn
+    meaningful patterns from the synthetic data.
+    """
+
+    is_fraud = random.random() < 0.10
+
+    if is_fraud:
+        amount = round(random.uniform(50000, 150000), 2)
+
+        device = random.choices(
+            ["Unknown", "Mobile", "Laptop", "Tablet"],
+            weights=[80, 7, 7, 6]
+        )[0]
+
+        location = random.choices(
+            LOCATIONS + ["International", "Unknown"],
+            weights=[3, 3, 3, 3, 3, 3, 35, 30]
+        )[0]
+
+        payment_method = random.choices(
+            PAYMENT_METHODS,
+            weights=[50, 30, 10, 10]
+        )[0]
+
+    else:
+        amount = round(random.uniform(100, 10000), 2)
+
+        device = random.choice(DEVICES)
+
+        location = random.choice(LOCATIONS)
+
+        payment_method = random.choice(PAYMENT_METHODS)
 
     transaction = {
         "transaction_id": str(uuid.uuid4()),
-
-        "customer_id": random.choice(CUSTOMERS),
-
-        "amount": round(random.uniform(100, 100000), 2),
-
-        "location": random.choice(LOCATIONS),
-
+        "customer_id": f"C{random.randint(1001, 1005)}",
+        "amount": amount,
+        "location": location,
         "merchant": random.choice(MERCHANTS),
-
-        "payment_method": random.choice(PAYMENT_METHODS),
-
-        "device": random.choice(DEVICES),
-
-        "timestamp": datetime.now().isoformat()
+        "payment_method": payment_method,
+        "device": device,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "is_fraud": is_fraud,
     }
 
     return transaction
@@ -72,44 +91,7 @@ def generate_transaction():
 
 if __name__ == "__main__":
 
-    print("Starting StreamPulse Transaction Generator...\n")
+    print("Testing transaction generator...\n")
 
-    while True:
-
-        transaction = generate_transaction()
-
-        print(transaction)
-
-        time.sleep(2)
-
-def generate_transaction():
-
-    customer_id = random.choice(CUSTOMERS)
-
-    is_fraud = random.random() < 0.10
-
-    if is_fraud:
-
-        amount = round(random.uniform(50000, 150000), 2)
-        location = random.choice(LOCATIONS)
-        device = "Unknown"
-
-    else:
-
-        amount = round(random.uniform(100, 10000), 2)
-        location = random.choice(LOCATIONS)
-        device = random.choice(DEVICES)
-
-    transaction = {
-        "transaction_id": str(uuid.uuid4()),
-        "customer_id": customer_id,
-        "amount": amount,
-        "location": location,
-        "merchant": random.choice(MERCHANTS),
-        "payment_method": random.choice(PAYMENT_METHODS),
-        "device": device,
-        "timestamp": datetime.now().isoformat(),
-        "is_fraud": is_fraud
-    }
-
-    return transaction
+    for _ in range(5):
+        print(generate_transaction())

@@ -1,0 +1,14 @@
+pyspark==4.2.0
+kafka-python
+pandas
+numpy
+scikit-learn
+joblib
+psycopg2-binary
+fastapi
+uvicorn
+requests
+streamlit
+redis
+pytest
+httpx
